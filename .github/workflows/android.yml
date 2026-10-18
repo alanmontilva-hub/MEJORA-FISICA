@@ -49,6 +49,15 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
+      - name: Verificar que la firma sea la fija
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          got=$("$APKSIGNER" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk | grep "certificate SHA-256" | head -1 | awk '{print $NF}')
+          want=$(keytool -list -v -keystore signing/debug.keystore -storepass android 2>/dev/null | grep "SHA256:" | head -1 | awk '{print $NF}' | tr -d ':' | tr 'A-F' 'a-f')
+          echo "APK:   $got"
+          echo "Llave: $want"
+          test -n "$got" && test "$got" = "$want"
+
       - name: Guardar APK como artefacto
         uses: actions/upload-artifact@v4
         with:
