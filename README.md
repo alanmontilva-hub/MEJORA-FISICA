@@ -1,6 +1,6 @@
-# Camino a 74
+# Mi Camino
 
-App de Android para seguir tu rutina de ejercicio, tus comidas, tu diario y tu progreso de peso (de 80 a 74 kg).
+App de Android para seguir tu rutina de ejercicio, tus comidas, tu diario y tu progreso de peso hacia tu meta (bajar, subir o mantener). Cada persona la configura la primera vez que la abre.
 Funciona sin internet, guarda todo en el teléfono y tiene asistente de voz y recordatorios.
 
 ## Instalar en el teléfono

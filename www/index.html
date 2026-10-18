@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<title>Camino a 74</title>
+<title>Mi Camino</title>
 <link rel="stylesheet" href="fonts/fonts.css">
 <style>
 /* Concepto: app de bolsillo con cinta inferior; el micrófono es el botón central elevado. Estilo atlético: tipografía condensada, tarjetas planas, un solo azul de acento y un naranja solo para el asistente. */
@@ -269,8 +269,10 @@ const ic=(n,s)=>`<svg width="${s||22}" height="${s||22}" viewBox="0 0 24 24" fil
 
 /* ---------- Contenido ---------- */
 const MET_ROPE=11.0; /* Compendio de Actividad Física, "Rope skipping exercise, general" */
-const DEF={startW:80,targetW:74,height:1.74,pMin:1.3,waterGoal:8,rem:{weigh:{on:true,t:'06:30'},lunch:{on:true,t:'12:30'},train:{on:true,t:'18:00'},diary:{on:true,t:'21:00'}}};
-function normSettings(x){const s=Object.assign({},DEF,clone(x||{}));s.rem=Object.assign(clone(DEF.rem),(x&&x.rem)||{});Object.keys(DEF.rem).forEach(k=>{s.rem[k]=Object.assign({},DEF.rem[k],s.rem[k]);});s.customEx=Array.isArray(s.customEx)?s.customEx:[];return s;}
+const DEF={setup:false,name:'',startW:80,targetW:74,height:1.74,pMin:1.3,waterGoal:8,rem:{weigh:{on:true,t:'06:30'},lunch:{on:true,t:'12:30'},train:{on:true,t:'18:00'},diary:{on:true,t:'21:00'}}};
+function normSettings(x){const s=Object.assign({},DEF,clone(x||{}));s.rem=Object.assign(clone(DEF.rem),(x&&x.rem)||{});Object.keys(DEF.rem).forEach(k=>{s.rem[k]=Object.assign({},DEF.rem[k],s.rem[k]);});s.customEx=Array.isArray(s.customEx)?s.customEx:[];s.name=String(s.name||'').slice(0,30);return s;}
+/* dir: -1 si la meta es bajar, 1 si es subir, 0 si es mantener */
+const gdir=()=>{const d=S.settings.targetW-S.settings.startW;return Math.abs(d)<0.05?0:d>0?1:-1;};
 const PLAN={
  0:{title:'Descanso activo',kind:'Movilidad',min:10,ex:[
    {n:'Movilidad de cadera y hombros',d:'10 min, sin prisa',m:['Caderas','Hombros','Espalda baja']},
@@ -382,7 +384,7 @@ async function kvSet(k,v){const P=plug('Preferences');try{if(P){await P.set({key
 async function loadStore(){
   let raw=await kvGet(KEY);
   if(raw==null){try{raw=localStorage.getItem(KEY);}catch(e){}}
-  try{const r=JSON.parse(raw||'null');if(r){S.settings=normSettings(r.settings);Object.keys(r.days||{}).forEach(k=>{S.days[k]=normDay(Object.assign({date:k},r.days[k]));});}}catch(e){}
+  try{const r=JSON.parse(raw||'null');if(r){S.settings=normSettings(r.settings);if(!r.settings||r.settings.setup==null)S.settings.setup=true;Object.keys(r.days||{}).forEach(k=>{S.days[k]=normDay(Object.assign({date:k},r.days[k]));});}}catch(e){}
 }
 function saveLocal(){kvSet(KEY,JSON.stringify({settings:S.settings,days:S.days}));}
 function payload(id){return id==='settings'?S.settings:(S.days[id.slice(2)]||null);}
@@ -399,7 +401,7 @@ function commit(date){render();schedule('d-'+date);}
 function commitSettings(){render();schedule('settings');}
 
 /* ---------- Vistas ---------- */
-function headerHTML(){return `<div class="brand">Camino a <b>74</b></div><div class="sync" id="sync">${syncText()}</div>`;}
+function headerHTML(){return `<div class="brand">Camino a <b>${kg(S.settings.targetW)}</b></div><div class="sync" id="sync">${syncText()}</div>`;}
 function navHTML(){
   const b=(id,icn,lb)=>`<button class="nb" data-act="tab" data-id="${id}" ${S.tab===id?'aria-current="page"':''}>${ic(icn,22)}<span>${lb}</span></button>`;
   return `<div class="in">${b('hoy','today','Hoy')}${b('comida','food','Comida')}<button class="mic" data-act="assist-open" aria-label="Abrir asistente de voz">${ic('mic',30)}</button>${b('diario','book','Diario')}${b('progreso','chart','Progreso')}</div>`;
@@ -422,7 +424,7 @@ function hoyView(){
   return `${dateBar()}
   <section class="card"><div class="hero">
     <div class="ring"><svg width="96" height="96" viewBox="0 0 96 96" role="img" aria-label="${pc}% del día"><g transform="rotate(-90 48 48)"><circle class="bg" cx="48" cy="48" r="36"/><circle class="fg" cx="48" cy="48" r="36" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/></g></svg><div class="n">${pc}%</div></div>
-    <div class="t"><div class="big">${done} de ${it.length} listos</div>
+    <div class="t">${S.settings.name?`<div class="muted">Hola, ${esc(S.settings.name)}</div>`:''}<div class="big">${done} de ${it.length} listos</div>
     ${st>0?`<div class="streak">${ic('flame',18)} Racha: ${st} ${st===1?'día':'días'} con 70% o más</div>`:'<div class="muted">La racha cuenta días con 70% o más.</div>'}</div>
   </div></section>
 
@@ -566,14 +568,15 @@ function weekly(){
 }
 function progresoAll(){
   const ws=weights(),st=S.settings,w=curW(),tr=trend();
-  const first=ws.length?ws[0].w:st.startW,total=w-st.startW,need=st.startW-st.targetW;
-  const prog=need>0?Math.max(0,Math.min(100,Math.round(100*(st.startW-w)/need))):0;
+  const first=ws.length?ws[0].w:st.startW,total=w-st.startW,dir=gdir(),need=Math.abs(st.targetW-st.startW);
+  const prog=need>0?Math.max(0,Math.min(100,Math.round(100*dir*(w-st.startW)/need))):0;
+  const okd=x=>dir===0?Math.abs(x)<0.3:x*dir>0;
   const bmi=w/(st.height*st.height);
   let proj='';
   if(tr){
     const d=tr.perWeek;
-    proj=`<p>Ritmo de los últimos 14 días: <b class="${d<0?'good':'warn'}">${d>0?'+':''}${fmt(d,2)} kg por semana</b> (${fmt(100*d/w,2)}% del peso).</p>`;
-    if(tr.slope<0&&tr.cur>st.targetW){const days=(tr.cur-st.targetW)/(-tr.slope);proj+=days<=730?`<p class="muted">Si mantienes este ritmo llegarías a ${kg(st.targetW)} kg hacia el ${(()=>{const t=parse(addDays(tr.last,Math.round(days)));return t.getDate()+' '+MON[t.getMonth()]+' '+t.getFullYear();})()}. Es una estimación y cambia con tu ritmo.</p>`:'<p class="muted">A este ritmo la meta queda a más de dos años. Revisa la constancia en la lista diaria.</p>';}
+    proj=`<p>Ritmo de los últimos 14 días: <b class="${okd(d)?'good':'warn'}">${d>0?'+':''}${fmt(d,2)} kg por semana</b> (${fmt(100*d/w,2)}% del peso).</p>`;
+    if(dir!==0&&tr.slope*dir>0&&(st.targetW-tr.cur)*dir>0){const days=(st.targetW-tr.cur)/tr.slope;proj+=days<=730?`<p class="muted">Si mantienes este ritmo llegarías a ${kg(st.targetW)} kg hacia el ${(()=>{const t=parse(addDays(tr.last,Math.round(days)));return t.getDate()+' '+MON[t.getMonth()]+' '+t.getFullYear();})()}. Es una estimación y cambia con tu ritmo.</p>`:'<p class="muted">A este ritmo la meta queda a más de dos años. Revisa la constancia en la lista diaria.</p>';}
   } else proj='<p class="muted">El ritmo aparece cuando tengas al menos 4 pesos repartidos en 7 días o más.</p>';
   const wk=weekly().slice(-6).reverse();
   const all=weekly().filter(r=>r.delta!=null),hiW=all.filter(r=>r.adh>=70),loW=all.filter(r=>r.adh<70);
@@ -585,11 +588,11 @@ function progresoAll(){
   const f=(id,lb,v,step)=>`<label>${lb}<input id="s-${id}" data-field="set-${id}" inputmode="decimal" autocomplete="off" value="${v}"></label>`;
   return `<section class="card"><div><div class="eyebrow">Récord de peso</div><h2>${kg(w)} kg</h2></div>
     <div class="bar good"><i style="width:${prog}%"></i></div>
-    <p class="muted">${prog}% del camino de ${kg(st.startW)} a ${kg(st.targetW)} kg${ws.length?'':' · registra tu primer peso en Hoy'}</p></section>
+    <p class="muted">${dir===0?'Meta: mantener tu peso cerca de '+kg(st.targetW)+' kg':prog+'% del camino de '+kg(st.startW)+' a '+kg(st.targetW)+' kg'}${ws.length?'':' · registra tu primer peso en Hoy'}</p></section>
   <section class="card">${chartSVG()}
     <div class="legend"><span>Promedio 7 días</span><span class="l2">Pesaje diario</span><span class="l3">Meta</span></div></section>
   <div class="tiles">
-    <div class="tile"><span class="lb">Cambio total</span><span class="val ${total<0?'good':''}">${ws.length?(total>0?'+':'')+fmt(total,1):'—'}<span class="unit"> kg</span></span><span class="sb">desde ${kg(st.startW)} kg</span></div>
+    <div class="tile"><span class="lb">Cambio total</span><span class="val ${okd(total)?'good':''}">${ws.length?(total>0?'+':'')+fmt(total,1):'—'}<span class="unit"> kg</span></span><span class="sb">desde ${kg(st.startW)} kg</span></div>
     <div class="tile"><span class="lb">IMC</span><span class="val">${fmt(bmi,1)}</span><span class="sb">con ${fmt(st.height,2)} m de estatura</span></div>
     <div class="tile"><span class="lb">Cintura</span><span class="val">${wTxt.replace(' cm','')}<span class="unit"> cm</span></span><span class="sb">${wDelta!=null?(wDelta>0?'+':'')+fmt(wDelta,1)+' cm desde la primera medida':'mide una vez por semana'}</span></div>
     <div class="tile"><span class="lb">Racha</span><span class="val ${streak()?'hotc':''}">${streak()}<span class="unit"> días</span></span><span class="sb">con 70% o más</span></div>
@@ -597,10 +600,11 @@ function progresoAll(){
   <section class="card"><h3>Ritmo</h3>${proj}</section>
   <section class="card"><h3>Semana a semana</h3>
     ${wk.length?`<div class="wkh"><span>Semana</span><span>Peso prom.</span><span>Cambio</span><span>Cumpl.</span><span>Cuerda</span></div>
-    ${wk.map(r=>{const t=parse(r.k);return `<div class="wk"><span>${t.getDate()} ${MON[t.getMonth()]}</span><span>${r.avg!=null?kg(r.avg):'—'}</span><span class="${r.delta!=null&&r.delta<0?'good':''}">${r.delta!=null?(r.delta>0?'+':'')+fmt(r.delta,1):'—'}</span><span><div class="bar"><i style="width:${r.adh}%"></i></div><span class="pcttxt">${r.adh}%</span></span><span>${r.jump} min</span></div>`;}).join('')}`:'<p class="muted">Cuando tengas registros de una semana, aparece aquí con tu peso promedio, el cambio, el cumplimiento y los minutos de cuerda.</p>'}
+    ${wk.map(r=>{const t=parse(r.k);return `<div class="wk"><span>${t.getDate()} ${MON[t.getMonth()]}</span><span>${r.avg!=null?kg(r.avg):'—'}</span><span class="${r.delta!=null&&gdir()!==0&&r.delta*gdir()>0?'good':''}">${r.delta!=null?(r.delta>0?'+':'')+fmt(r.delta,1):'—'}</span><span><div class="bar"><i style="width:${r.adh}%"></i></div><span class="pcttxt">${r.adh}%</span></span><span>${r.jump} min</span></div>`;}).join('')}`:'<p class="muted">Cuando tengas registros de una semana, aparece aquí con tu peso promedio, el cambio, el cumplimiento y los minutos de cuerda.</p>'}
     ${ins}
   </section>
   <section class="card"><h3>Mis metas</h3>
+    <label>Tu nombre<input id="s-name" data-field="set-name" autocomplete="off" value="${esc(st.name||'')}"></label>
     <div class="fields">${f('startW','Peso inicial (kg)',kg(st.startW))}${f('targetW','Peso meta (kg)',kg(st.targetW))}${f('height','Estatura (m)',fmt(st.height,2))}${f('pMin','Proteína mínima (g/kg)',fmt(st.pMin,1))}${f('waterGoal','Vasos de agua al día',st.waterGoal)}</div>
   </section>
   ${remCard()}${backupCard()}${aiCard()}
@@ -825,14 +829,43 @@ function progresoView(){
 }
 
 /* ---------- Render y eventos ---------- */
+function welcomeView(){
+  const st=S.settings;
+  return `<section class="card"><div><div class="eyebrow">Bienvenida</div><h2>Vamos a configurar tu camino</h2></div>
+    <p class="muted">Son 4 datos. Se guardan solo en este teléfono y los puedes cambiar después en Progreso, Ajustes.</p>
+    <form id="welcome-form" style="display:flex;flex-direction:column;gap:12px">
+      <label>Tu nombre<input name="name" autocomplete="off" placeholder="Opcional"></label>
+      <div class="fields3">
+        <label>Peso actual (kg)<input name="startW" inputmode="decimal" autocomplete="off" placeholder="${kg(st.startW)}"></label>
+        <label>Peso meta (kg)<input name="targetW" inputmode="decimal" autocomplete="off" placeholder="${kg(st.targetW)}"></label>
+        <label>Estatura (m)<input name="height" inputmode="decimal" autocomplete="off" placeholder="${fmt(st.height,2)}"></label>
+      </div>
+      <p class="muted">Si tu meta es mayor que tu peso actual, la app mide el avance hacia subir. Si es igual, hacia mantener.</p>
+      <button class="btn" type="submit">${ic('check',20)} Empezar</button>
+    </form></section>
+  <section class="card"><h3>Antes de empezar</h3><div class="src">
+    <span>La rutina semanal es general, de nivel principiante y para hacer en casa. Si tienes una lesión o una condición médica, consúltala con tu médico antes de entrenar.</span>
+    <span>La meta de proteína por defecto es 1,3 g por kg de peso al día, tomada de estudios en adultos con sobrepeso que bajan de peso. Puedes cambiarla en Ajustes.</span>
+  </div></section>`;
+}
+function doWelcome(f){
+  const fd=new FormData(f),s=S.settings,sw=num(fd.get('startW')),tw=num(fd.get('targetW')),h0=num(fd.get('height'));
+  const hh=h0!=null&&h0>3?h0/100:h0;
+  if(sw==null||!(sw>=30&&sw<=300)){toast('Escribe tu peso actual en kg.');return;}
+  if(tw==null||!(tw>=30&&tw<=300)){toast('Escribe tu peso meta en kg.');return;}
+  if(hh==null||!(hh>=1.2&&hh<=2.3)){toast('Escribe tu estatura, por ejemplo 1,65.');return;}
+  s.name=String(fd.get('name')||'').trim().slice(0,30);s.startW=sw;s.targetW=tw;s.height=hh;s.setup=true;
+  S.tab='hoy';commitSettings();window.scrollTo(0,0);
+}
 function render(force){
   const a=document.activeElement;
   if(!force&&a&&a!==document.body&&$('#view').contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)){pendingRender=true;return;}
   pendingRender=false;
   let fk=null;if(a&&a.dataset&&a.dataset.act&&a.dataset.act!=='tab')fk={act:a.dataset.act,id:a.dataset.id||'',n:a.dataset.n||'',v:a.dataset.v||'',kind:a.dataset.kind||''};
   $('#hd').innerHTML=headerHTML();
-  $('#view').innerHTML=({hoy:hoyView,comida:comidaView,diario:diarioView,progreso:progresoView})[S.tab]();
-  $('#nav').innerHTML=navHTML();
+  const wel=!S.settings.setup;
+  $('#view').innerHTML=wel?welcomeView():({hoy:hoyView,comida:comidaView,diario:diarioView,progreso:progresoView})[S.tab]();
+  $('#nav').innerHTML=wel?'':navHTML();
   if(fk){const el=Array.from(document.querySelectorAll('[data-act="'+fk.act+'"]')).find(e=>(e.dataset.id||'')===fk.id&&(e.dataset.n||'')===fk.n&&(e.dataset.v||'')===fk.v&&(e.dataset.kind||'')===fk.kind);if(el&&!el.disabled)el.focus({preventScroll:true});}
 }
 let toastT=null;
@@ -877,6 +910,7 @@ document.addEventListener('change',e=>{
     commit(S.date);
   } else if(f.indexOf('set-')===0){
     const k=f.slice(4),s=S.settings;let x=v;
+    if(k==='name'){s.name=String(t.value||'').trim().slice(0,30);commitSettings();return;}
     if(x==null){commitSettings();return;}
     if(k==='height'&&x>3)x=x/100;
     const lim={startW:[30,300],targetW:[30,300],height:[1.2,2.3],pMin:[0.8,2.4],waterGoal:[1,20]}[k];
@@ -886,6 +920,7 @@ document.addEventListener('change',e=>{
 });
 document.addEventListener('submit',e=>{
   const f=e.target;
+  if(f.id==='welcome-form'){e.preventDefault();doWelcome(f);return;}
   if(f.id==='lift-form'){e.preventDefault();addLift(f);return;}
   if(f.id==='newex-form'){e.preventDefault();addEx(f);return;}
   if(f.id!=='entry-form')return;e.preventDefault();
@@ -929,7 +964,7 @@ async function nativeMic(){
     if(!av||!av.available){note.textContent='Este teléfono no tiene el reconocimiento de voz de Google activo. Escribe o usa el micrófono del teclado.';ta.focus();return;}
     let p=await SRP.checkPermissions();
     if(p.speechRecognition!=='granted')p=await SRP.requestPermissions();
-    if(p.speechRecognition!=='granted'){note.textContent='Necesito el permiso de micrófono. Actívalo en Ajustes del teléfono, Aplicaciones, Camino a 74.';return;}
+    if(p.speechRecognition!=='granted'){note.textContent='Necesito el permiso de micrófono. Actívalo en Ajustes del teléfono, Aplicaciones, Mi Camino.';return;}
     await SRP.removeAllListeners();
     const base=ta.value?ta.value.trim()+' ':'';
     await SRP.addListener('partialResults',d=>{if(d&&d.matches&&d.matches.length)ta.value=base+d.matches[0];});

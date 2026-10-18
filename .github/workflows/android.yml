@@ -62,6 +62,6 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk camino-a-74.apk
           gh release delete latest --yes --cleanup-tag || true
           gh release create latest camino-a-74.apk \
-            --title "Camino a 74 (compilación ${{ github.run_number }})" \
+            --title "Mi Camino (compilación ${{ github.run_number }})" \
             --notes "APK listo para instalar en Android. Descarga camino-a-74.apk y ábrelo en el teléfono." \
             --latest
