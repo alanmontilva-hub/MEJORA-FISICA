@@ -607,7 +607,7 @@ function progresoAll(){
     <label>Tu nombre<input id="s-name" data-field="set-name" autocomplete="off" value="${esc(st.name||'')}"></label>
     <div class="fields">${f('startW','Peso inicial (kg)',kg(st.startW))}${f('targetW','Peso meta (kg)',kg(st.targetW))}${f('height','Estatura (m)',fmt(st.height,2))}${f('pMin','Proteína mínima (g/kg)',fmt(st.pMin,1))}${f('waterGoal','Vasos de agua al día',st.waterGoal)}</div>
   </section>
-  ${remCard()}${backupCard()}${aiCard()}
+  ${remCard()}${backupCard()}${aiCard()}${aboutCard()}
   <section class="card"><h3>Cómo se calcula</h3><div class="src">
     <span>IMC = peso en kg ÷ estatura en m al cuadrado. Ritmo = pendiente de una recta ajustada a tus pesos de los últimos 14 días.</span>
     <span>Calorías de la cuerda = METs × kg × horas, con ${fmt(MET_ROPE,1)} METs según el <a href="https://pacompendium.com/conditioning-exercise/" target="_blank" rel="noopener">Compendio de Actividad Física</a>.</span>
@@ -658,6 +658,11 @@ function backupRestore(){
   S.settings=normSettings(r.settings);S.days={};
   Object.keys(r.days).forEach(k=>{if(/^\d{4}-\d{2}-\d{2}$/.test(k))S.days[k]=normDay(Object.assign({date:k},r.days[k]));});
   saveLocal();setSync('local');render();scheduleReminders(false);toast('Respaldo restaurado.');
+}
+function aboutCard(){
+  const i=S.appInfo;
+  const t=NATIVE?('App de Android '+esc((i&&i.name)||'')+(i?' · versión '+esc(i.version)+' (compilación '+esc(i.build)+')':''))+'. El micrófono usa el reconocimiento de voz del teléfono.':'Versión de navegador. Aquí el micrófono no funciona; instala la app de Android.';
+  return `<section class="card"><h3>Esta app</h3><p class="muted">${t}</p></section>`;
 }
 function aiCard(){
   return `<section class="card"><h3>Asistente con IA (opcional)</h3><p class="muted">Sin clave, el asistente entiende pesos, medidas, agua, minutos de ejercicio y comidas con huevos. Con tu clave de la API de Anthropic, estima la proteína y las calorías de cualquier comida. La clave queda solo en este teléfono y cada anotación consume saldo de tu cuenta de la API.</p><label class="muted">Clave de API<input id="ai-key" type="password" data-field="aikey" autocomplete="off" placeholder="${S.aiKey?'Clave guardada':'sk-ant-…'}"></label>${S.aiKey?'<button class="btn small" id="ai-test" data-act="ai-test">Probar clave</button><button class="btn ghost small" data-act="ai-clear">Quitar clave</button>':''}${NATIVE?'':'<p class="muted"><b>Estás en la versión de navegador.</b> Aquí el micrófono no funciona. Instala la app de Android «Mi Camino» para hablarle al asistente.</p>'}</section>`;
@@ -1121,6 +1126,7 @@ document.addEventListener('visibilitychange',()=>{
   setSync('local');render();updateBadge();
   scheduleReminders(false);
   const AppP=plug('App');
+  if(AppP&&AppP.getInfo)AppP.getInfo().then(i=>{S.appInfo=i;render();}).catch(()=>{});
   if(AppP){AppP.addListener('backButton',()=>{
     if(!$('#sheet').hidden){closeSheet();return;}
     if(S.tab!=='hoy'){S.tab='hoy';render();window.scrollTo(0,0);return;}
