@@ -28,6 +28,9 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      - name: Copiar el núcleo de Capacitor a la app
+        run: cp node_modules/@capacitor/core/dist/capacitor.js www/capacitor-core.js
+
       - name: Crear proyecto Android
         env:
           VERSION_CODE: ${{ github.run_number }}
