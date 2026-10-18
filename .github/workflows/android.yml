@@ -1,0 +1,67 @@
+name: Compilar APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Crear proyecto Android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: |
+          npx cap add android
+          python3 scripts/prepare_android.py
+          npx capacitor-assets generate --android
+          npx cap sync android
+
+      - name: Usar la firma fija de la app
+        run: |
+          mkdir -p ~/.android
+          cp signing/debug.keystore ~/.android/debug.keystore
+
+      - name: Aceptar licencias del SDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - name: Compilar APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Guardar APK como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: camino-a-74-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publicar en Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk camino-a-74.apk
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest camino-a-74.apk \
+            --title "Camino a 74 (compilación ${{ github.run_number }})" \
+            --notes "APK listo para instalar en Android. Descarga camino-a-74.apk y ábrelo en el teléfono." \
+            --latest

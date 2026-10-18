@@ -1,0 +1,12 @@
+{
+  "appId": "com.alanmontilva.caminoa74",
+  "appName": "Camino a 74",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#EDF0F4"
+  },
+  "plugins": {
+    "CapacitorHttp": { "enabled": true },
+    "SystemBars": { "insetsHandling": "css" }
+  }
+}
