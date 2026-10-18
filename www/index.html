@@ -660,7 +660,7 @@ function backupRestore(){
   saveLocal();setSync('local');render();scheduleReminders(false);toast('Respaldo restaurado.');
 }
 function aiCard(){
-  return `<section class="card"><h3>Asistente con IA (opcional)</h3><p class="muted">Sin clave, el asistente entiende pesos, medidas, agua, minutos de ejercicio y comidas con huevos. Con tu clave de la API de Anthropic, estima la proteína y las calorías de cualquier comida. La clave queda solo en este teléfono y cada anotación consume saldo de tu cuenta de la API.</p><label class="muted">Clave de API<input id="ai-key" type="password" data-field="aikey" autocomplete="off" placeholder="${S.aiKey?'Clave guardada':'sk-ant-…'}"></label>${S.aiKey?'<button class="btn ghost small" data-act="ai-clear">Quitar clave</button>':''}</section>`;
+  return `<section class="card"><h3>Asistente con IA (opcional)</h3><p class="muted">Sin clave, el asistente entiende pesos, medidas, agua, minutos de ejercicio y comidas con huevos. Con tu clave de la API de Anthropic, estima la proteína y las calorías de cualquier comida. La clave queda solo en este teléfono y cada anotación consume saldo de tu cuenta de la API.</p><label class="muted">Clave de API<input id="ai-key" type="password" data-field="aikey" autocomplete="off" placeholder="${S.aiKey?'Clave guardada':'sk-ant-…'}"></label>${S.aiKey?'<button class="btn small" id="ai-test" data-act="ai-test">Probar clave</button><button class="btn ghost small" data-act="ai-clear">Quitar clave</button>':''}${NATIVE?'':'<p class="muted"><b>Estás en la versión de navegador.</b> Aquí el micrófono no funciona. Instala la app de Android «Mi Camino» para hablarle al asistente.</p>'}</section>`;
 }
 async function onKey(t){const v=t.value.trim();t.value='';if(!v)return;S.aiKey=v;await kvSet(AIKEY,v);updateBadge();toast('Clave guardada en este teléfono.');render();}
 async function aiClear(){S.aiKey='';await kvSet(AIKEY,'');updateBadge();toast('Clave eliminada.');render();}
@@ -895,6 +895,7 @@ document.addEventListener('click',e=>{
   else if(act==='backup-copy')backupCopy();
   else if(act==='backup-restore')backupRestore();
   else if(act==='ai-clear')aiClear();
+  else if(act==='ai-test')aiTest();
 });
 document.addEventListener('change',e=>{
   const t=e.target,f=t.dataset&&t.dataset.field;if(!f)return;
@@ -952,7 +953,7 @@ function webMic(){
   const base=ta.value?ta.value.trim()+' ':'';
   rec.onresult=ev=>{let t='';for(let i=0;i<ev.results.length;i++)t+=ev.results[i][0].transcript;ta.value=base+t;};
   rec.onerror=ev=>{listening=false;setMic();
-    note.textContent=(ev.error==='not-allowed'||ev.error==='service-not-allowed')?'Esta página no tiene permiso de micrófono aquí. Escribe, o usa el micrófono de tu teclado.':(ev.error==='no-speech'?'No te escuché. Inténtalo de nuevo.':'No pude usar el micrófono ('+ev.error+').');};
+    note.textContent=(ev.error==='not-allowed'||ev.error==='service-not-allowed')?'El navegador no deja usar el micrófono aquí. En la app de Android «Mi Camino» sí funciona. Mientras tanto, escribe o usa el micrófono de tu teclado.':(ev.error==='no-speech'?'No te escuché. Inténtalo de nuevo.':'No pude usar el micrófono ('+ev.error+').');};
   rec.onend=()=>{listening=false;setMic();if($('#sh-note').textContent==='Escuchando…')$('#sh-note').textContent='';};
   try{rec.start();listening=true;setMic();note.textContent='Escuchando…';}catch(e){listening=false;setMic();note.textContent='No pude iniciar el micrófono. Escribe o usa el dictado del teclado.';}
 }
@@ -1038,15 +1039,36 @@ function applyResult(o,date){
   if(o.note){d.notes.push({id:uid(),t:t,text:o.note});L.push('Nota guardada');}
   return L;
 }
-async function askClaude(prompt){
+async function askClaude(prompt,raw){
   const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),25000);
   try{
-    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',signal:ctl.signal,headers:{'content-type':'application/json','x-api-key':S.aiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-5-5',max_tokens:800,messages:[{role:'user',content:prompt}]})});
-    if(!r.ok){const e=new Error('http '+r.status);e.status=r.status;throw e;}
-    const j=await r.json(),txt=(j.content||[]).map(b=>b.text||'').join(''),a=txt.indexOf('{'),b=txt.lastIndexOf('}');
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',signal:ctl.signal,headers:{'content-type':'application/json','x-api-key':S.aiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-haiku-5-5',max_tokens:raw?30:800,messages:[{role:'user',content:prompt}]})});
+    if(!r.ok){const e=new Error('http '+r.status);e.status=r.status;try{const j=await r.json();e.detail=(j&&j.error&&j.error.message)||'';}catch(x){}throw e;}
+    const j=await r.json(),txt=(j.content||[]).map(b=>b.text||'').join('');
+    if(raw)return txt;
+    const a=txt.indexOf('{'),b=txt.lastIndexOf('}');
     if(a<0||b<a)throw new Error('sin JSON');
     return JSON.parse(txt.slice(a,b+1));
   }finally{clearTimeout(to);}
+}
+function aiErr(e){
+  const st=e&&e.status,d=e&&e.detail?' Detalle: '+String(e.detail).slice(0,160):'';
+  if(st===401)return 'La clave no es válida o fue revocada. Créala de nuevo y pégala otra vez.'+d;
+  if(st===403)return 'La cuenta no tiene permiso para usar la API (puede ser por región o por la clave).'+d;
+  if(st===400)return 'La API rechazó la solicitud; si el detalle habla de saldo, recarga crédito en Billing.'+d;
+  if(st===402)return 'Hace falta saldo en la cuenta de la API.'+d;
+  if(st===404)return 'El modelo no está disponible para esta cuenta.'+d;
+  if(st===429)return 'Demasiadas solicitudes seguidas. Espera un momento.'+d;
+  if(st>=500)return 'El servicio de Anthropic está ocupado ahora ('+st+'). Inténtalo en un rato.'+d;
+  if(e&&e.name==='AbortError')return 'La conexión tardó demasiado. Revisa tu internet.';
+  return 'No hubo conexión con la API. Revisa tu internet.';
+}
+async function aiTest(){
+  if(!S.aiKey){toast('Primero pega tu clave.');return;}
+  const b=$('#ai-test');if(b){b.disabled=true;b.textContent='Probando…';}
+  try{const t=await askClaude('Responde solo la palabra: listo',true);toast('La IA funciona. Respuesta: '+String(t).trim().slice(0,30));}
+  catch(e){toast(aiErr(e));}
+  finally{const b2=$('#ai-test');if(b2){b2.disabled=false;b2.textContent='Probar clave';}}
 }
 async function anotar(){
   const ta=$('#sh-text'),text=ta.value.trim(),out=$('#sh-out'),btn=$('#sh-go'),note=$('#sh-note');
@@ -1057,7 +1079,7 @@ async function anotar(){
   if(S.aiKey){
     const ids=items(date).map(i=>i.id).filter(i=>i!=='weigh'&&i!=='water').join(', '),exList=allEx().map(e=>e.id+'='+e.n+' ('+e.m+')').join('; ');
     const prompt='Eres el asistente de un diario de entrenamiento y dieta de una persona en Venezuela. Extrae SOLO lo que la persona dijo, sin inventar nada. Fecha: '+date+'.\nTexto: """'+text+'"""\nResponde únicamente un objeto JSON con estas claves (omite las que no apliquen): {"weight_kg":number,"waist_cm":number,"water_glasses_add":number,"meals":[{"kind":"desayuno|almuerzo|cena|merienda|otro","text":string,"protein_g":number,"kcal":number}],"workouts":[{"type":"cuerda|caminata|fuerza|escaleras|otro","min":number}],"checks_done":[ids entre: '+ids+'],"mood":1-5,"energy":1-5,"note":string,"lifts":[{"ex_id":string,"kg":number,"reps":number,"sets":number}]}. Para ejercicios de fuerza usa ex_id de esta lista (id=nombre y modo): '+exList+'. kg es 0 si es con peso corporal; en planchas reps son los segundos. Para cada comida estima protein_g y kcal de forma aproximada con porciones típicas venezolanas; si no puedes estimar, omítelos. Incluye mood y energy solo si la persona dijo cómo se sintió. Usa punto decimal.';
-    try{res=cleanRes(await askClaude(prompt));used='ia';}catch(e){res=null;note.textContent=(e&&e.status===401)?'La clave de IA no es válida. Anoté con el modo básico.':'No pude usar la IA ahora. Anoté con el modo básico.';}
+    try{res=cleanRes(await askClaude(prompt));used='ia';}catch(e){res=null;note.textContent=aiErr(e)+' Anoté con el modo básico.';}
   }
   if(!res){const p=parseLocal(text);res=cleanRes({weight_kg:p.weight,waist_cm:p.waist,water_glasses_add:p.water,workouts:p.work,checks_done:p.checks,meals:p.meals.map(m=>({kind:m.kind,text:m.text,protein_g:m.prot})),lifts:p.lifts.map(l=>({ex_id:l.ex,kg:l.kg,reps:l.reps,sets:l.sets}))});}
   if(isEmpty(res))res.note=text;
