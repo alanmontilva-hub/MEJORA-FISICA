@@ -677,7 +677,7 @@ async function aiClear(){S.aiKey='';await kvSet(AIKEY,'');updateBadge();toast('C
 
 /* ---------- Reloj (Health Connect) ---------- */
 const HL=plug('Health');
-const HC_READ=['steps','distance','calories','totalCalories','heartRate','restingHeartRate','sleep','workouts'];
+const HC_READ=['steps','distance','calories','heartRate','restingHeartRate','sleep','workouts'];
 const fmtN=n=>String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g,'.');
 const hm=m=>Math.floor(m/60)+' h '+pad(Math.round(m%60))+' min';
 let hcBusy=false;
@@ -707,14 +707,16 @@ async function hcSync(force){
     const rng={startDate:a.toISOString(),endDate:b.toISOString()};
     const key=sm=>ymd(new Date(sm.startDate));
     const agg=async(type,ag)=>ok.has(type)?((await HL.queryAggregated(Object.assign({dataType:type,bucket:'day',aggregation:ag},rng))).samples||[]):null;
-    const fields=[['steps','steps','sum',1],['distance','dist','sum',1],['calories','kcal','sum',1],['totalCalories','kcalT','sum',1],['heartRate','hr','average',1],['restingHeartRate','rhr','average',1]];
+    const fields=[['steps','steps','sum',1],['distance','dist','sum',1],['calories','kcal','sum',1],['heartRate','hr','average',1],['restingHeartRate','rhr','average',1]];
     const H={};
     for(let d=new Date(a);d<b;d.setDate(d.getDate()+1))H[ymd(d)]={};
+    const bad=[];
     for(const f of fields){
-      const rows=await agg(f[0],f[2]);if(!rows)continue;
-      rows.forEach(sm=>{const k=key(sm),v=+sm.value;if(H[k]&&isFinite(v)&&v>0)H[k][f[1]]=Math.round(v);});
+      try{const rows=await agg(f[0],f[2]);if(!rows)continue;
+      rows.forEach(sm=>{const k=key(sm),v=+sm.value;if(H[k]&&isFinite(v)&&v>0)H[k][f[1]]=Math.round(v);});}
+      catch(e){bad.push(HX[f[1]]?HX[f[1]][0]:f[0]);}
     }
-    if(ok.has('sleep')){
+    if(ok.has('sleep'))try{
       const r=await HL.readSamples({dataType:'sleep',startDate:rng.startDate,endDate:rng.endDate,limit:1000,ascending:true});
       const asleep=x=>!x||x==='asleep'||x==='rem'||x==='deep'||x==='light';
       ((r&&r.samples)||[]).forEach(sm=>{
@@ -724,19 +726,19 @@ async function hcSync(force){
         else if(asleep(sm.sleepState))mins=(new Date(sm.endDate)-new Date(sm.startDate))/60000;
         if(mins>0)H[k].sleep=Math.round((H[k].sleep||0)+mins);
       });
-    }
-    if(ok.has('workouts')){
+    }catch(e){bad.push('Sueño');}
+    if(ok.has('workouts'))try{
       const r=await HL.queryWorkouts({startDate:rng.startDate,endDate:rng.endDate,limit:200,ascending:true});
       ((r&&r.workouts)||[]).forEach(w=>{const k=ymd(new Date(w.startDate));if(!H[k])return;
         (H[k].w=H[k].w||[]).push({t:String(w.workoutType||'other'),min:Math.round((+w.duration||0)/60),kcal:w.totalEnergyBurned?Math.round(w.totalEnergyBurned):0,km:w.totalDistance?Math.round(w.totalDistance/10)/100:0,at:new Date(w.startDate).toTimeString().slice(0,5)});});
-    }
+    }catch(e){bad.push('Entrenos');}
     Object.keys(H).forEach(k=>{if(Object.keys(H[k]).length)S.health[k]=H[k];else delete S.health[k];});
-    S.hcAt=Date.now();S.hcMsg='';schedule('health');
+    S.hcAt=Date.now();S.hcMsg=bad.length?'No se pudo leer: '+bad.join(', ')+'. Lo demás sí se actualizó.':'';schedule('health');
   }catch(e){S.hcMsg=hcErr(e);}
   finally{hcBusy=false;render();}
 }
 function hcOff(){S.settings.hc=false;S.hcMsg='';commitSettings();toast('Reloj desconectado. Tus datos ya guardados se conservan.');}
-const HX={steps:['Pasos','reps',1],dist:['Distancia (km)','load',1/1000],kcal:['Calorías activas','reps',1],kcalT:['Calorías totales','reps',1],hr:['Pulso promedio','reps',1],rhr:['Pulso en reposo','reps',1],sleep:['Sueño (horas)','load',1/60]};
+const HX={steps:['Pasos','reps',1],dist:['Distancia (km)','load',1/1000],kcal:['Calorías activas','reps',1],hr:['Pulso promedio','reps',1],rhr:['Pulso en reposo','reps',1],sleep:['Sueño (horas)','load',1/60]};
 function hcSeries(f){
   const sc=HX[f][2];
   return Object.keys(S.health).sort().filter(k=>S.health[k][f]>0).map(k=>({date:k,v:S.health[k][f]*sc}));
